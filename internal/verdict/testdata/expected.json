@@ -1,0 +1,178 @@
+[
+  {
+    "file": "round1bk1-OracleBillingA.md",
+    "verdict": "REJECT",
+    "scope": [
+      "**S1:** the trial-expiry lapse can overwrite a subscription that lands at the same moment. Setup: hold the owner with a blocker, queue `effective_billing` on an expired trial, then `MarkSubscribed`, then release. Final row: plan `Lapsed`, with the sub id and period end, and the webhook's own upsert returns Lapsed. Base `effective_plan` gives the identical result, so this predates the slice. `upsert_lapsed` updates without checking the plan is still trial.",
+      "**S2:** a Stripe `trialing` status after the app trial has expired lapses at once. `MarkTrialing` sets plan to trial but keeps the old `trial_started_at`, so `effective_plan` returns `Lapsed`. Same result at base and slice.",
+      "**Skipped:** the Stripe contract cross-product (family 4, basil `current_period_end` on subscription events). There is no live Stripe here, and it is already filed as plan R8."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleBillingA2.md",
+    "verdict": "APPROVE",
+    "scope": [
+      "S1 (pre-existing; not in the fix diff): billing.gleam:342-343 and :397-398 say 'a webhook event can never CREATE a billing_state row'. Probe: ensure_trial t, then a checkout.session.completed event (client_reference_id t, customer cus_r, no subscription) whose clock calls retire_tenant(t). This is the only clock call on that path, and it falls between fetch_billing and the upsert. Result: `Ok(WebhookAccepted(Subscribed))`, and the row is re-created as Subscribed/cus_r at generation 1, so a later effective_billing returns Subscribed. Base 929d84e with purge_tenant in the clock gives the same result: `Ok(WebhookAccepted(Subscribed))`, row re-created. The new apply_subscribed_no_id comment describes this behaviour accurately. Needs a bead ruling; no bd write was made (read-only seat).",
+      "Prior-round notes N1 and N3 and scope notes S1-S2 (race lapse vs subscribe, Stripe trialing after the app trial) are carried unchanged."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleBillingB.md",
+    "verdict": "REJECT",
+    "scope": [
+      "authenticate_api_key and retire_tenant have no callers in src yet (grep for 'meta_db.<name>' in server/src returns 0 for both). The round plan (§1 and S2, lines 87, 95, 142) gives those callers to W1-D. web.gleam still has the key prefix (:40) and the SHA-256 lookup (:746-747) until W1-D migrates it, so the 'Hides' claim in the 1bk.7.6 design record is only true after that slice lands."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleBillingB2.md",
+    "verdict": "APPROVE",
+    "scope": []
+  },
+  {
+    "file": "round1bk1-OracleComposition.md",
+    "verdict": "APPROVE",
+    "scope": [
+      "Carried, already filed as 1bk.7.15: tenant_registry.evict is pub with 0 production callers after the composition (account used it at base). The only remaining callers are tests: 12 references, including the test_services defer."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleEdgeA.md",
+    "verdict": "REJECT",
+    "scope": [
+      "**S1:** during a DELETE, requests already in flight whose owner gets stopped crash with 500 (`unhandled_error ... callee exited ... Noproc` in `connection_owner.dispatch`). Race probe: head 13–19 of 400 GETs, base 4 of 400, same crash class. This is owner lifecycle in the registry, not the edge mapping.",
+      "**S2:** a meta.db fault during API-key lookup (`api_keys` table renamed) returns 401 with no error line. Base behaves the same. It is a PER-6-style server-fault-as-401 on the key path; `meta_db.authenticate_api_key` classifies lookup failure as `KeyRejected`, which is wave 0's S3 code, not this slice's."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleEdgeA2.md",
+    "verdict": "APPROVE",
+    "scope": [
+      "Answers 500 with no error line when meta.db faults, for both JWT and dev callers; a29e1a0 behaves the same. Outside the fix diff."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleEdgeA3.md",
+    "verdict": "APPROVE",
+    "scope": [
+      "api/account.list_keys answers 500 with no error line on a meta.db fault. Outside the diff."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleEdgeB.md",
+    "verdict": "REJECT",
+    "scope": [
+      "S1. `tenant_registry.evict` (tenant_registry.gleam:486) has 0 production callers after this slice (base: account.gleam:64). Its remaining callers are test_services.gleam:159 and tenant_registry_test ×10. It need not be public production API, because `delete_tenant` owns the only production path. The file is outside this slice.",
+      "S2. `meta_db.bump_generation` (:1087) and `meta_db.purge_tenant` (:1363) have 0 src callers outside meta_db (base: 1 each, in account.gleam). They need not be exported, because `retire_tenant` does both steps.",
+      "S3. web's private `KeyAuth` type (web.gleam:722-739) and the `api_key_auth` translation are now a one-to-one mirror of `meta_db.KeyAuth`, with one consumer (`resolve_context`). It need not exist, because `resolve_context` can match `meta_db.KeyAuth` directly."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleEdgeB2.md",
+    "verdict": "REJECT",
+    "scope": [
+      "none new; round 0 S1 (tenant_registry.evict) carried"
+    ]
+  },
+  {
+    "file": "round1bk1-OracleEdgeB3.md",
+    "verdict": "APPROVE",
+    "scope": []
+  },
+  {
+    "file": "round1bk1-OracleErrorsA.md",
+    "verdict": "REJECT",
+    "scope": [
+      "**S1.** Deleting other seeded singleton rows gives 404 on base and head alike, through the rewriting wrappers the brief keeps (today.gleam:80, review.gleam:55):\n  - missing `settings` row: `GET /api/settings` answers 404 `not found`\n  - missing `settings`, `rotation` or `review_state` rows: `GET /api/today`, `POST /api/sessions` and `GET /api/review` answer 404 `session not found`\n  \n  These are client-style 404s for server-side misses. The architect should rule on them together with B2.",
+      "**S2.** The `api/curriculum.gleam:79-80` arm for `Library(Today(Invariant))` cannot be reached: curriculum only calls library through `checks_for_items_in_conn`, which only ever returns `Library(Store(_))`. The \"own or wrapped\" clause requires the arm."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleErrorsA2.md",
+    "verdict": "APPROVE",
+    "scope": [
+      "S1: the from_packs_error PackNotFound/PremiumRequired arms (today.gleam:245, :247) and review.gleam:562 build today.Invariant values that no reachable input produces; review:562 would now answer 500 with no log through Today(_)."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleErrorsB.md",
+    "verdict": "REJECT",
+    "scope": [
+      "S1. Six wrapped `Today(Invariant)` arms never run in shipped code: api/assess.gleam:65, api/curriculum.gleam:75 and :79, api/drills.gleam:27, api/library.gleam:35, api/review.gleam:45.\n  - The only reachable producer of today_service.Invariant is log_drill (today.gleam:1157-1175). Its only consumer is api/today (router.gleam:159 → api/today.gleam:575).\n  - The other producers never fire. from_packs_error (:234-237) can't get these errors: packs.gleam builds PackNotFound/PremiumRequired only in set_enabled (:184, :188). review.gleam:560 is unreachable (see N1).\n  - These arms need not exist. Without them those paths fall to `Today(_) -> internal_error()` and still answer 500. The brief mandated them, so this is the orchestrator's ruling."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleErrorsB2.md",
+    "verdict": "APPROVE",
+    "scope": [
+      "S1: from_packs_error's new `call` parameter (service/today.gleam:231-250, a curried signature plus 5 call-site edits) feeds only the detail of the PackNotFound and PremiumRequired arms (:245, :247). Those arms never run: packs.gleam builds the variants only in set_enabled (:184, :188), and no from_packs_error call site reaches set_enabled. This need not exist, because it hardens an arm that never executes. It was ordered as a named nit, so the ruling is the orchestrator's."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleRegistryA.md",
+    "verdict": "REJECT",
+    "scope": [
+      "Pre-existing class that needs a bead: connection_owner.stop (call_forever) on an already-dead Ready owner, with its Down still queued, panics the registry actor. HEAD: handle_delete:1037 (probe P9). Base: handle_evict:798 (same probe via evict). The sweep has the same call at :1367."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleRegistryA2.md",
+    "verdict": "APPROVE",
+    "scope": [
+      "**Delete arriving before a dead owner's Down (P9, carried).** The registry crashes at `handle_delete:1062` (706e33f `:1037`). Evict at base has the same crash.",
+      "**Dead owner inside a stray ProvisionDone (N12).** I injected a ProvisionDone carrying a dead owner:\n  - On a313609 it now crashes the registry when it lands on a Deleting slot, at `handle_provision_done:970`.\n  - 706e33f already crashed the same way on an empty slot (`:945`).\n  - This is the same crash as P9, at one more place. I only reached it by injecting the message, because the late owner is linked to a provisioner that exits normally.",
+      "**A deleted generation's file comes back (N4z).** A provisioner that read generation 0, then timed out, opens after `delete_tenant` returned `Ok`. This recreates an empty `t.db` (0 rows; the late owner is closed; `tenant_count` stays 1; the next resolve uses generation 1). 706e33f behaves identically. I did not run it on base because base has no `delete_tenant`."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleRegistryA3.md",
+    "verdict": "APPROVE",
+    "scope": []
+  },
+  {
+    "file": "round1bk1-OracleRegistryB.md",
+    "verdict": "REJECT",
+    "scope": [
+      "**S1:** `Retired.generation` has zero readers. The registry binds it as `_generation` in `start_delete_worker`. It is seam-pinned, so whether it should exist is the architect's ruling."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleRegistryB2.md",
+    "verdict": "REJECT",
+    "scope": [
+      "**S1. The parse-first guard in `delete_tenant` protects a path no caller reaches.** This covers the guard itself (`:501-506`), its `RetireFailed` doc sentence, and the named unreachable `RemoveInvalidTenantId` arm (`:1171-1173`). There are 0 callers of `delete_tenant` in src at a313609 or in any sibling slice. The planned W1-D caller passes `ctx.tenant_id`, which has already passed `tenant_registry.resolve` at web.gleam:689/759/780. The guard need not exist: a doc fix alone would have made the `RetireFailed` doc true. The arbiter ordered it; recorded here for the orchestrator only."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleRegistryB3.md",
+    "verdict": "APPROVE",
+    "scope": [
+      "None new. S1 is resolved by deleting the guard."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleRouterA.md",
+    "verdict": "REJECT",
+    "scope": [
+      "review_draft_sessions_never_contains_premium_pack_drills_test (and the deleted open_session test at base) passes whether or not premium content is filtered: with filter_premium made a no-op it stays green at base and head, and a full-entitlement GET /api/review contains no 'classical'. Pre-existing coverage gap; only the service-level tests catch it."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleRouterA2.md",
+    "verdict": "APPROVE",
+    "scope": [
+      "Carried from the previous review, predates the slice: GET /api/review's review_draft assertion stays green with premium filtering disabled. The corrected comment now says so."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleRouterB.md",
+    "verdict": "APPROVE",
+    "scope": [
+      "Fixture.services, Fixture.meta and Fixture.dir have no readers in this diff; only owner (5 uses) and content_version (1) are read. The S5 contract requires all five fields; whether the three unused ones should stay is the architect's call."
+    ]
+  },
+  {
+    "file": "round1bk1-OracleRouterB2.md",
+    "verdict": "APPROVE",
+    "scope": []
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "verdict": "APPROVE",
+  "hash": "52c9dfc",
+  "seat": "A (bug-hunt)",
+  "model": "anthropic/claude-opus-5-5",
+  "coverage": "10 families, 33 probes + carried rows, 0 skipped — local://oracle-billing-A-r1.md",
+  "blocking": [],
+  "prior_blockers": {
+    "BLOCKING_1_B8prime": "Resolved. Leg b (X1, retire deletes api_keys only): meta_db_test `Failed: 1 ... Passed: 22`. The one failure is retire_tenant_bumps_then_purges_and_preserves_trial_start_test, left value `Ok(Some(BillingRecord(\"t\", Trial, Some(1000), None, None, None, 1000)))`, which is the :547 fetch_billing assertion. router_billing_test: `All 30 tests passed.` Leg a (X1 with only the :547 assertion removed): `All 23 tests passed.` Leg c (slice): `All 23` and `All 30`. Extra mutants: X1r (billing only, keys kept), X7 (tombstone with trial None) and M8 (purge hoisted) all turn the retire test red.",
+    "BLOCKING_2_B2prime": "Resolved. Leg b (X2b): `Failed: 1`, only legacy_sentinel_rows_are_rewritten_to_null_on_open_test; router `All 30`. Leg a (X2b with only the `u.stripe_customer_id == Some(\"cus_b\")` line removed): `All 23 tests passed.` Mutants X2 (cpe `= 0 or > 0`), X2c (all subscription ids nulled) and M2 (rewrites deleted) each turn exactly that test red.",
+    "BLOCKING_3_F3": "Resolved. `git diff -U0 aa0d482..99d0de4 -- meta_db.gleam` has 2 hunks, all `///` lines. Doc probe on the new trial_ends_at text: trial, lapsed and subscribed rows all give `{some,2593000}`, and a row with no trial start gives `none`. effective_plan returns trial at ends-1 and lapsed at ends. The only caller, billing.gleam:47, gates on Trial at :60-63."
+  },
+  "F4": "The signature is `Result(Int, sqlight.Error)`. The only callers are in meta_db_test (git grep across the whole tree), and a cold `gleam build --warnings-as-errors` gives 0 warnings. The retire test observes the bump by one: the mutants Ok(previous+1), generation+2, no bump, and previous read after the bump each turn it red. 25 concurrent retires return exactly 0..24 and leave the final generation at 25. Error arms: a bump failure gives `Error(ConstraintTrigger)` with the generation unchanged. A failed billing_state read gives `Error(no such table)`, generation 0 and the key intact. A panicking clock gives `Error(thunk panicked)` and the owner stays alive. A purge failure gives `Ok(0)` with generation 1 (best-effort, as the doc says).",
+  "nit_docs_verified": "effective_billing round-trip doc, checked with an erlang call trace on connection_owner:query: 1 for an existing row with no transition, 4 with no row, 3 for trial to lapsed, 1 for a lapsed row, 6 with no row and an expired preserved start, and 1 for retire_tenant. All match the new text. apply_subscribed_no_id comment: with no row, MarkSubscribed(None, Some(123)) with customer cus_x gives `Some(BillingRecord(\"t\", Subscribed, None, Some(\"cus_x\"), None, Some(123), 77))`, which matches. The numstat in the implementer's reply (4/2, 18/10, 39/27) matches.",
+  "full_suite": "`nix develop .. -c gleam test` on a scratch copy of 52c9dfc (supervised, 9m52s): `679 passed, no failures`, EXIT=0.",
+  "nits": [],
+  "scope": [
+    "S1 (pre-existing; not in the fix diff): billing.gleam:342-343 and :397-398 say 'a webhook event can never CREATE a billing_state row'. Probe: ensure_trial t, then a checkout.session.completed event (client_reference_id t, customer cus_r, no subscription) whose clock calls retire_tenant(t). This is the only clock call on that path, and it falls between fetch_billing and the upsert. Result: `Ok(WebhookAccepted(Subscribed))`, and the row is re-created as Subscribed/cus_r at generation 1, so a later effective_billing returns Subscribed. Base 929d84e with purge_tenant in the clock gives the same result: `Ok(WebhookAccepted(Subscribed))`, row re-created. The new apply_subscribed_no_id comment describes this behaviour accurately. Needs a bead ruling; no bd write was made (read-only seat).",
+    "Prior-round notes N1 and N3 and scope notes S1-S2 (race lapse vs subscribe, Stripe trialing after the app trial) are carried unchanged."
+  ],
+  "isolation": "Scratch /tmp/1bk1-billing-A-r1 was an rsync of the worktree plus a throwaway git repo; base was a git archive of 929d84e with the first-party build purged. The shared py kernel's globals were clobbered by another agent mid-run (`sh` rebound), so later probes ran from a private namespace. Scratch was deleted before yielding. Worktree status is clean at 52c9dfc.",
+  "reply": "BLOCKING: none. Nits: none. SCOPE: S1 above (pre-existing webhook re-creates billing row after retire; base shows the same). Coverage: 10 families, 33 probes + carried rows, 0 skipped — local://oracle-billing-A-r1.md. Ran as anthropic/claude-opus-5-5. VERDICT: APPROVE"
+}

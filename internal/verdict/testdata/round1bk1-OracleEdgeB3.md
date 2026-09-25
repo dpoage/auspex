@@ -1,0 +1,15 @@
+{
+  "verdict": "APPROVE",
+  "coverage": "12 families, 26 probes, 2 skipped — local://oracle-edge-B-r2.md",
+  "binds": "2e5b025",
+  "model": "anthropic/claude-opus-5-5",
+  "summary": "Seat B re-reviewed the edge slice at 2e5b025 after fix round 2 and approves it. Blocker B1 is fixed.\n\nWhat the diff touches: only router_auth_test.gleam (25 lines added, 5 removed). The server/src diff from 929d84e is byte-identical at e364cc6 and at 2e5b025 (md5 706417ff50f337e79a2a7fd4a357804c).\n\nD8b (key-bearing request on a JWT-only route), with web.gleam:720 changed to fall through to resolve_jwt:\n- Leg a, test file from e364cc6: all 87 tests pass, so the old test missed the fall-through.\n- Leg b, test file from 2e5b025: only dev_mode_key_lookup_fault_is_500_not_401_test fails, with \"204 should equal 500\". The log shows DELETE /api/account answered 204 as tenant dev.\n- Leg c, clean 2e5b025: all 87 pass.\n- With the DELETE status and body asserts removed, the generation assert fails on its own: \"Ok(1) should equal Ok(0)\".\n- Mapping the fault to Error(NotAuthenticated) at :720 fails with \"401 should equal 500\".\n\nD8a and D5:\n- D8a (meta_db.gleam:883 maps the fault to KeyRejected): 54/54 pass with both tests switched off. With them on, exactly those two fail, one with \"401 should equal 500\".\n- The :782 fall-through fails with \"200 should equal 500\", tenant dev.\n- D5 (:781): 54/54 pass with its two tests off; with them on, both fail with \"200 should equal 401\".\n\nOther checks:\n- router_auth_test run on its own: 19/19 pass.\n- A cold build with --warnings-as-errors is clean, and format --check passes.\n- Calling the test directly prints 3 api_key_lookup_failed lines, one for each key-bearing request. None of them contains a gt_ token.\n- Every claim in the doc comment at :295-308 and the keys-leg comment at :344-346 matches a probe result.\n- The 1bk.7.6 comment from 09:35 matches the file: its line references :309, :295-308, :326-331, :333-342 and :344-352, its failure messages, and its counts.\n\nThe full gleam test suite was not run; the brief made it optional for this change.",
+  "blocking": [],
+  "nits": [
+    "N5 (not new, gleam test only): if the log.error call at web.gleam:580 is replaced with `let _ = error`, router_auth, meta_db and api_key_policy still pass, so no test sees a dropped api_key_lookup_failed line. The only failure in that run was csp_matches_served_index_html_test, and that is a scratch artifact: the scratch copy has no web/ directory, and clean 2e5b025 fails the same test the same way. The log module has no capture hook (hardening_test.gleam:417), so the line count is checked by hand from stdout.",
+    "N3 carried: the lookup-fault mapping is written twice, at web.gleam:720 and :782. Both copies are now covered by tests.",
+    "N1, N2 and N4 from round 1 are carried unchanged, because server/src is byte-identical."
+  ],
+  "scope": [],
+  "scratch_deleted": true
+}

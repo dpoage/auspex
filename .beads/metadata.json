@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "auspex",
+  "project_id": "5457deea-dfb2-4220-92d3-814c06f1867a"
+}

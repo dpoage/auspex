@@ -1,0 +1,7 @@
+{
+  "verdict": "VERDICT: APPROVE",
+  "coverage": "1 family, 2 probes, 0 skipped — local://oracle-example-b.md",
+  "matrix": "local://oracle-example-b.md",
+  "scope": [],
+  "reply": "Everything held except one thing I noticed too late. VERDICT: REJECT"
+}

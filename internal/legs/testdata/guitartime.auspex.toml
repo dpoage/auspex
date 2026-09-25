@@ -1,0 +1,36 @@
+# guitartime's auspex leg config (criterion G8). The suite is the CI gate
+# job's own command; each module entry runs that package's `gleam test` for
+# every target its CI job runs (shared: erlang and javascript; server:
+# erlang; web: javascript), inside the same `nix develop` shell check.sh
+# uses.
+#
+# count_regex sums gleeunit's "<passed> passed[, <failures> failures]" line
+# (gleeunit/internal/reporting.gleam `finished/1`, ANSI SGR-wrapped around
+# the whole line, never around the digits themselves). The trailing
+# ", <skipped> skipped" clause is matched but not captured, so a skipped
+# count never inflates the executed-test total.
+#
+# Every leg runs in a fresh export, so gleam compiles every dependency cold:
+# in acceptance runs a suite leg took about 1200 s and the server module
+# leg about 1125 s. The timeouts leave headroom over that: 45m for the
+# suite, 30m per module.
+count_regex = '(\d+) passed, (?:no failures|(\d+) failures)(?:, \d+ skipped)?'
+
+[suite]
+argv = ["nix", "develop", "-c", "./check.sh"]
+timeout = "45m"
+
+[[module]]
+prefix = "shared/"
+argv = ["nix", "develop", "-c", "sh", "-c", "cd shared && gleam test --target erlang && gleam test --target javascript"]
+timeout = "30m"
+
+[[module]]
+prefix = "server/"
+argv = ["nix", "develop", "-c", "sh", "-c", "cd server && gleam test --target erlang"]
+timeout = "30m"
+
+[[module]]
+prefix = "web/"
+argv = ["nix", "develop", "-c", "sh", "-c", "cd web && gleam test --target javascript"]
+timeout = "30m"

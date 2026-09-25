@@ -1,0 +1,29 @@
+{
+  "verdict": "APPROVE",
+  "coverage": "11 families, 34 probes, 0 skipped — local://oracle-router-A-r1.md",
+  "hash": "a3217dc",
+  "seat": "A (bug-hunt)",
+  "model": "anthropic/claude-opus-5-5",
+  "blocking": [],
+  "nits": [
+    "N4 (carried, W1-D's): router_auth_test:4 and export_test:4 still mention the stale handle_request_for_context."
+  ],
+  "scope": [
+    "Carried from the previous review, predates the slice: GET /api/review's review_draft assertion stays green with premium filtering disabled. The corrected comment now says so."
+  ],
+  "notes": [
+    "Each fixture call leaves one process behind: the tenant_registry actor. Registry is opaque, src has no stop API, and the actor traps exits, so it survives when its caller exits. It holds no fds. C4 allows it ('leave it … report the remaining process delta'). Across the eight suites the end process count is 184, against 185 at base."
+  ],
+  "B1_reprobe": {
+    "head_a3217dc": "20x with_dev fds 29->29 procs +20; 20x with_lapsed fds 29->29 procs +20; same when each call runs in a child process, for real-curriculum bodies making requests, and for error/throw/exit bodies. Reason re-raised intact. 0 leftover dirs, 0 fds into fixture dirs.",
+    "mutant_37d0983_fixture": "with_dev +8 fds/+3 procs per call; with_lapsed +11/+4; 61 leftover dirs",
+    "eight_suites_one_vm": "head 137 passed, fds 29->29, procs 46->184 (previous head fds 962, procs 419)",
+    "ulimit_1024_full_run": "ULIMIT=1024; 672 passed, no failures; EXIT=0; about 10 min"
+  },
+  "C4_legs": {
+    "a": "37d0983 fixture, no hygiene test: All 137 tests passed",
+    "b": "37d0983 fixture + test_services_test: Failed 3, Passed 137 (owner pids still alive)",
+    "c": "a3217dc + test_services_test: All 140 tests passed"
+  },
+  "hygiene_test_mutants": "M1 no-evict 3/3 red; M2 no content stop 3/3 red; M3 no meta stop: lapsed and crash tests red, dev green (dev has no meta); M4 no dir delete 3/3 red; M5 release only on success: only the crash test red; M6 content stop removed with the pid check disabled: 3/3 red on the /proc fd assertion, so that check is not vacuous"
+}
