@@ -103,15 +103,20 @@ query rather than a task.
 
 ### Run a judge lint
 
-Set `LLMKIT_TYPESAFE_API_KEY` first. `auspex omen` exits 1 when the key is unset
-or when the judge call fails, so a lint never passes by default.
+Set `LLMKIT_TYPESAFE_API_KEY` first. `auspex omen` fails closed: it exits 1
+when the key is unset, and it exits 1 when the judge rejects the key.
 
 ```bash
-auspex omen <brief|fixlist|reply|blocker> --slice <bead> <file|->
+$ auspex omen brief --slice tmp_EvvZTNulhQ-a6x brief.md
+tmp_EvvZTNulhQ-a6x/1181a19bddc9
+omen: mechanism claim flagged at 0.85 (threshold 0.85)
+$ echo $?
+0
 ```
 
-Pass `-` to read the document from standard input. The lint only flags problems.
-It never blocks a round.
+`auspex omen` exits 0 when it flags a claim, because a lint never blocks a
+round. It exits 1 only when it cannot reach a judge. Pass `-` instead of a path
+to read the document from standard input.
 
 ## The leg config
 
